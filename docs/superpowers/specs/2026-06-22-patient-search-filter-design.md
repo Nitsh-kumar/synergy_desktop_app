@@ -67,9 +67,10 @@ Add a compact filter bar above the patient table in the Patients tab.
 ### Display Rules
 
 - If there are no patients in the system, keep the existing empty state
-- If patients exist but the active filters produce zero matches, show a dedicated no-match state
+- If patients exist but the active filters produce zero matches, replace the table area with a dedicated no-match state
 - The no-match state should explain that filters returned no results and provide a quick way to clear them
 - The table structure, bulk selection, and delete actions remain in place for visible rows
+- When filters do return matches, render the filtered table normally in place of the no-match state
 
 ## 5. Architecture and Data Flow
 
@@ -152,17 +153,28 @@ Existing bulk selection behavior needs special care.
 
 ### Design Rule
 
-Bulk actions should continue to apply only to the explicitly selected patient IDs. Filtering should not silently expand selection to hidden rows, and hidden rows should not appear deleted unless they were already selected.
+Bulk actions should continue to apply only to the explicitly selected patient IDs that remain visible in the current filtered result set. Filtering should not silently expand selection to hidden rows.
 
 ### Implementation Direction
 
 - Keep selection keyed by patient ID, as it is today
 - Ensure the visible checkbox state is based on the filtered list being shown
 - Ensure “select all” applies to the currently visible filtered rows, not the entire hidden dataset
+- When a filter change hides previously selected rows, clear those hidden selections automatically
+- The bulk delete count should always reflect only the currently visible selected rows
 
 This avoids surprising destructive behavior after filters are introduced.
 
-## 10. Error Handling
+## 10. CSV Export Behavior
+
+The existing Export CSV action should respect the active filters.
+
+- With no active filters, export the full patient list as it works today
+- With active filters, export only the currently visible filtered rows
+- The exported columns remain the current patient export columns unless a later Phase 4 slice changes them explicitly
+- The export action should not include hidden non-matching rows
+
+## 11. Error Handling
 
 This slice should not introduce new persistence or IPC failure modes.
 
@@ -170,7 +182,7 @@ This slice should not introduce new persistence or IPC failure modes.
 - Filter interactions must be purely client-side and should never throw user-visible technical errors
 - The design should prefer safe defaults when optional fields such as `condition` are missing
 
-## 11. Verification
+## 12. Verification
 
 ### Manual Checks
 
@@ -183,13 +195,15 @@ This slice should not introduce new persistence or IPC failure modes.
 7. Clear filters and confirm the full list returns
 8. Trigger a no-match state and confirm the recovery path is obvious
 9. Verify row selection and bulk delete still behave correctly under filters
+10. Apply filters and confirm Export CSV contains only the currently visible rows
+11. Clear filters and confirm Export CSV returns to exporting the full patient list
 
 ### Required Commands
 
 - `npm run build`
 - `npm run lint`
 
-## 12. Why This Slice First
+## 13. Why This Slice First
 
 This is the lowest-risk, highest-value opening step for Phase 4:
 
@@ -198,7 +212,7 @@ This is the lowest-risk, highest-value opening step for Phase 4:
 - it avoids premature database search APIs
 - it creates a better patient-directory surface for later editing and profile work
 
-## 13. Next Likely Phase 4 Slices
+## 14. Next Likely Phase 4 Slices
 
 After this slice, the most natural follow-up options are:
 
