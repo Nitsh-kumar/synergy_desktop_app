@@ -33,6 +33,8 @@ The experience stays local-first, desktop-first, and consistent with the current
 - Combined filtering behavior
 - No-match empty state
 - Clear-filters affordance
+- Filter-aware row selection and bulk delete behavior
+- Filter-aware patient CSV export behavior
 
 ### Out of Scope
 
@@ -91,6 +93,12 @@ The app already loads the full patient list through the safe Electron preload AP
    - selected patient type
 5. The UI renders the derived list instead of the raw list
 
+The filter state is renderer-only and session-only:
+
+- it persists while the app stays open, including when the user switches tabs
+- it resets when the app is restarted
+- it is not written to SQLite or app config in this slice
+
 ### Boundaries
 
 - **Database layer:** unchanged
@@ -132,6 +140,7 @@ No database or Electron files should need changes for this slice.
 
 - Match against `patient.name`
 - Match against `patient.condition`
+- Use case-insensitive substring matching (`includes`-style), not exact or prefix-only matching
 - Ignore case
 - Treat missing `condition` safely as empty text
 
