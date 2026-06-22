@@ -66,6 +66,7 @@ Add a compact filter bar above the patient table in the Patients tab.
 
 ### Display Rules
 
+- If there are no patients in the system, keep the existing empty state and do not show the filter bar
 - If there are no patients in the system, keep the existing empty state
 - If patients exist but the active filters produce zero matches, replace the table area with a dedicated no-match state
 - The no-match state should explain that filters returned no results and provide a quick way to clear them
@@ -96,6 +97,15 @@ The app already loads the full patient list through the safe Electron preload AP
 - **Database layer:** unchanged
 - **Electron main process / IPC / preload:** unchanged
 - **Renderer:** owns the new filtering behavior and display logic
+
+The filtered view applies only to the Patients tab patient-directory surface:
+
+- patient table rows
+- patient-row selection state
+- bulk delete behavior
+- patient CSV export behavior
+
+Other existing consumers of the loaded `patients` array, including dashboard counts and OPD/IPD patient selectors, continue using the full list unchanged in this slice.
 
 This preserves the Phase 3 security boundary: the renderer never gains direct database access and no raw SQL or file APIs are introduced.
 
@@ -171,6 +181,7 @@ The existing Export CSV action should respect the active filters.
 
 - With no active filters, export the full patient list as it works today
 - With active filters, export only the currently visible filtered rows
+- If filters are active and zero rows are visible, disable Export CSV until the visible result set is non-empty
 - The exported columns remain the current patient export columns unless a later Phase 4 slice changes them explicitly
 - The export action should not include hidden non-matching rows
 
@@ -202,6 +213,10 @@ This slice should not introduce new persistence or IPC failure modes.
 
 - `npm run build`
 - `npm run lint`
+
+### Done Criteria
+
+This slice is done when the Patients tab can instantly filter by name/condition and type, selection/delete/export all stay consistent with the visible filtered result set, and the rest of the app remains behaviorally unchanged.
 
 ## 13. Why This Slice First
 
