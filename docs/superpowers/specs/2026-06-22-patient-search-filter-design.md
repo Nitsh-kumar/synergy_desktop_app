@@ -67,7 +67,6 @@ Add a compact filter bar above the patient table in the Patients tab.
 ### Display Rules
 
 - If there are no patients in the system, keep the existing empty state and do not show the filter bar
-- If there are no patients in the system, keep the existing empty state
 - If patients exist but the active filters produce zero matches, replace the table area with a dedicated no-match state
 - The no-match state should explain that filters returned no results and provide a quick way to clear them
 - The table structure, bulk selection, and delete actions remain in place for visible rows
