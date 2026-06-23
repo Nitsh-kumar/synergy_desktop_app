@@ -172,6 +172,65 @@
   margin-bottom: 1.5rem;
 }
 
+.patient-directory-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.patient-directory-count {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
+.patient-directory-actions {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.patient-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-end;
+  margin-bottom: 0.75rem;
+}
+
+.patient-filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 1 1 260px;
+}
+
+.patient-filter-field label {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.patient-filter-type {
+  flex: 0 1 180px;
+}
+
+.patient-filter-clear {
+  align-self: flex-end;
+}
+
+.patient-export-note {
+  margin-bottom: 1.5rem;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.empty-state-action {
+  margin-top: 1rem;
+}
+
 .data-table {
   width: 100%;
   border-collapse: collapse;
@@ -219,6 +278,24 @@
 .btn-secondary:hover {
   background: rgba(255, 255, 255, 0.1);
   border-color: var(--text-secondary);
+}
+
+.btn-secondary:disabled,
+.btn-danger:disabled,
+.patient-filter-clear:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.btn-secondary:disabled:hover,
+.btn-danger:disabled:hover,
+.patient-filter-clear:disabled:hover {
+  background: var(--panel-border);
+  border-color: var(--panel-border);
+  transform: none;
+  box-shadow: none;
 }
 
 .data-table tr.selected {
@@ -351,4 +428,27 @@ input[type="checkbox"] {
   border-top-color: var(--accent-color);
   border-radius: 50%;
   animation: spin 0.9s linear infinite;
+}
+
+/* ── PATIENT FORM (add / edit shared panel) ── */
+.patient-form {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.patient-form-actions {
+  margin-top: auto;
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* Override .action-panel button so the two-button row stays stable */
+.patient-form-actions button {
+  margin-top: 0;
+  align-self: auto;
+  padding: 0.75rem 1.5rem;
+  font-size: 1.05rem;
 }

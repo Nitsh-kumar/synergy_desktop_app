@@ -1,5 +1,22 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import './App.css';
+import { buildPatientCsv } from './lib/patientCsv.js';
+import {
+  DEFAULT_PATIENT_FILTERS,
+  areAllVisiblePatientsSelected,
+  filterPatients,
+  getVisibleSelectedPatientIds,
+  pruneSelectionToVisible,
+} from './lib/patientFilters.js';
+import { getUserErrorMessage } from './lib/userErrors.js';
+import {
+  EMPTY_PATIENT_FORM,
+  createPatientEditBaseline,
+  shouldConfirmDiscardPatientForm,
+  isMissingPatientRecordError,
+  applyPatientEditResult,
+} from './lib/patientEditing.js';
+import PatientFormPanel from './components/PatientFormPanel.jsx';
 
 // ─────────────────────────────────────────────
 // Helper: use Electron IPC if available, otherwise warn
@@ -18,6 +35,10 @@ function formatDate(isoStr) {
   if (!isoStr) return '';
   const d = new Date(isoStr);
   return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function logAppError(context, error) {
+  console.error(`[Synergy] ${context}`, error);
 }
 
 // ─────────────────────────────────────────────
@@ -50,8 +71,13 @@ function App() {
   const [ipdStartDate, setIpdStartDate]         = useState('');
   const [ipdNotes, setIpdNotes]                 = useState('');
 
+  // Patient edit mode
+  const [editingPatientId, setEditingPatientId]       = useState(null);
+  const [patientFormBaseline, setPatientFormBaseline] = useState(EMPTY_PATIENT_FORM);
+
   // Selection for batch delete
   const [selectedPatientIds, setSelectedPatientIds] = useState(new Set());
+  const [patientFilters, setPatientFilters] = useState(DEFAULT_PATIENT_FILTERS);
 
   // ─────────────────────────────────────────────
   // Load all data from DB on mount
@@ -73,7 +99,8 @@ function App() {
       setSessions(s);
       setIpdPlans(i);
     } catch (err) {
-      setError(`Failed to load data: ${err.message}`);
+      logAppError('Failed to load clinic data', err);
+      setError(getUserErrorMessage(err, 'Could not load clinic data. Please restart Synergy and try again.'));
     } finally {
       setLoading(false);
     }
@@ -91,6 +118,75 @@ function App() {
   const totalSessions   = sessions.length;
   const activeIpdPlans  = ipdPlans.length;
 
+  const filteredPatients = useMemo(
+    () => filterPatients(patients, patientFilters),
+    [patients, patientFilters]
+  );
+  const visibleSelectedPatientIds = useMemo(
+    () => getVisibleSelectedPatientIds(selectedPatientIds, filteredPatients),
+    [selectedPatientIds, filteredPatients]
+  );
+  const visibleSelectedPatientCount = visibleSelectedPatientIds.length;
+  const allVisiblePatientsSelected = useMemo(
+    () => areAllVisiblePatientsSelected(selectedPatientIds, filteredPatients),
+    [selectedPatientIds, filteredPatients]
+  );
+  const hasActivePatientFilters =
+    patientFilters.searchText.trim().length > 0 ||
+    patientFilters.patientType !== DEFAULT_PATIENT_FILTERS.patientType;
+
+  useEffect(() => {
+    setSelectedPatientIds((previousSelection) => {
+      const nextSelection = pruneSelectionToVisible(previousSelection, filteredPatients);
+
+      return nextSelection.size === previousSelection.size ? previousSelection : nextSelection;
+    });
+  }, [filteredPatients]);
+
+  // ─────────────────────────────────────────────
+  // Patient form helpers
+  // ─────────────────────────────────────────────
+  const resetPatientForm = () => {
+    setPatientName('');
+    setPatientPhone('');
+    setPatientCondition('');
+    setPatientType('OPD');
+    setEditingPatientId(null);
+    setPatientFormBaseline(EMPTY_PATIENT_FORM);
+  };
+
+  const handleBeginEditPatient = (patient) => {
+    const currentFormValues = {
+      name: patientName,
+      phone: patientPhone,
+      condition: patientCondition,
+      type: patientType,
+    };
+    if (shouldConfirmDiscardPatientForm(currentFormValues, patientFormBaseline)) {
+      if (!window.confirm('You have unsaved changes. Discard and edit this patient?')) return;
+    }
+    const baseline = createPatientEditBaseline(patient);
+    setPatientName(baseline.name);
+    setPatientPhone(baseline.phone);
+    setPatientCondition(baseline.condition);
+    setPatientType(baseline.type);
+    setEditingPatientId(patient.id);
+    setPatientFormBaseline(baseline);
+  };
+
+  const handleCancelEdit = () => {
+    const currentFormValues = {
+      name: patientName,
+      phone: patientPhone,
+      condition: patientCondition,
+      type: patientType,
+    };
+    if (shouldConfirmDiscardPatientForm(currentFormValues, patientFormBaseline)) {
+      if (!window.confirm('Discard unsaved changes?')) return;
+    }
+    resetPatientForm();
+  };
+
   // ─────────────────────────────────────────────
   // Patient Handlers
   // ─────────────────────────────────────────────
@@ -105,40 +201,91 @@ function App() {
         type: patientType,
       });
       setPatients(prev => [created, ...prev]);
-      setPatientName('');
-      setPatientPhone('');
-      setPatientCondition('');
-      setPatientType('OPD');
+      resetPatientForm();
     } catch (err) {
-      alert(`Error adding patient: ${err.message}`);
+      logAppError('Failed to add patient', err);
+      alert(getUserErrorMessage(err, 'Could not add patient. Please try again.'));
+    }
+  };
+
+  const handleUpdatePatient = async (e) => {
+    e.preventDefault();
+    if (!patientName.trim() || !editingPatientId) return;
+    try {
+      const updated = await api.patients.update({
+        id: editingPatientId,
+        name: patientName,
+        phone: patientPhone,
+        condition: patientCondition,
+        type: patientType,
+      });
+      const result = applyPatientEditResult({
+        patients,
+        sessions,
+        ipdPlans,
+        sessionPatientId,
+        ipdPatientId,
+        updatedPatient: updated,
+      });
+      setPatients(result.patients);
+      setSessions(result.sessions);
+      setIpdPlans(result.ipdPlans);
+      setSessionPatientId(result.sessionPatientId);
+      resetPatientForm();
+    } catch (err) {
+      logAppError('Failed to update patient', err);
+      if (isMissingPatientRecordError(err)) {
+        alert(getUserErrorMessage(err, 'Could not update patient. The record no longer exists.'));
+        resetPatientForm();
+        await loadData();
+        // patientFilters is NOT reset; selection pruning runs via the filteredPatients effect
+      } else {
+        // Stay in edit mode and preserve entered values so the user can retry
+        alert(getUserErrorMessage(err, 'Could not update patient. Please try again.'));
+      }
     }
   };
 
   const toggleSelectPatient = (id) => {
-    const next = new Set(selectedPatientIds);
-    next.has(id) ? next.delete(id) : next.add(id);
-    setSelectedPatientIds(next);
+    setSelectedPatientIds((previousSelection) => {
+      const nextSelection = new Set(previousSelection);
+      nextSelection.has(id) ? nextSelection.delete(id) : nextSelection.add(id);
+      return nextSelection;
+    });
   };
 
   const toggleSelectAll = () => {
-    if (selectedPatientIds.size === patients.length && patients.length > 0) {
-      setSelectedPatientIds(new Set());
-    } else {
-      setSelectedPatientIds(new Set(patients.map(p => p.id)));
-    }
+    if (filteredPatients.length === 0) return;
+
+    setSelectedPatientIds((previousSelection) => {
+      const nextSelection = new Set(previousSelection);
+
+      if (areAllVisiblePatientsSelected(previousSelection, filteredPatients)) {
+        filteredPatients.forEach((patient) => nextSelection.delete(patient.id));
+        return nextSelection;
+      }
+
+      filteredPatients.forEach((patient) => nextSelection.add(patient.id));
+      return nextSelection;
+    });
   };
 
   const handleBulkDelete = async () => {
-    if (selectedPatientIds.size === 0) return;
-    if (!window.confirm(`Delete ${selectedPatientIds.size} patient(s) and all their records?`)) return;
+    if (visibleSelectedPatientCount === 0) return;
+    if (!window.confirm(`Delete ${visibleSelectedPatientCount} patient(s) and all their records?`)) return;
+
+    const patientIdsToDelete = visibleSelectedPatientIds;
+    const patientIdsToDeleteSet = new Set(patientIdsToDelete);
+
     try {
-      await api.patients.deleteMany([...selectedPatientIds]);
-      setPatients(prev => prev.filter(p => !selectedPatientIds.has(p.id)));
-      setSessions(prev => prev.filter(s => !selectedPatientIds.has(s.patientId)));
-      setIpdPlans(prev => prev.filter(i => !selectedPatientIds.has(i.patientId)));
-      setSelectedPatientIds(new Set());
+      await api.patients.deleteMany(patientIdsToDelete);
+      setPatients(prev => prev.filter(p => !patientIdsToDeleteSet.has(p.id)));
+      setSessions(prev => prev.filter(s => !patientIdsToDeleteSet.has(s.patientId)));
+      setIpdPlans(prev => prev.filter(i => !patientIdsToDeleteSet.has(i.patientId)));
+      setSelectedPatientIds(prev => new Set([...prev].filter((id) => !patientIdsToDeleteSet.has(id))));
     } catch (err) {
-      alert(`Error deleting patients: ${err.message}`);
+      logAppError('Failed to delete patients', err);
+      alert(getUserErrorMessage(err, 'Could not delete the selected patients. Please try again.'));
     }
   };
 
@@ -163,7 +310,8 @@ function App() {
       setSessionType('Consultation');
       setSessionNotes('');
     } catch (err) {
-      alert(`Error recording session: ${err.message}`);
+      logAppError('Failed to record session', err);
+      alert(getUserErrorMessage(err, 'Could not record the session. Please try again.'));
     }
   };
 
@@ -173,7 +321,8 @@ function App() {
       await api.sessions.delete(id);
       setSessions(prev => prev.filter(s => s.id !== id));
     } catch (err) {
-      alert(`Error deleting session: ${err.message}`);
+      logAppError('Failed to delete session', err);
+      alert(getUserErrorMessage(err, 'Could not delete the session. Please try again.'));
     }
   };
 
@@ -199,7 +348,8 @@ function App() {
       setIpdStartDate('');
       setIpdNotes('');
     } catch (err) {
-      alert(`Error adding IPD plan: ${err.message}`);
+      logAppError('Failed to add IPD plan', err);
+      alert(getUserErrorMessage(err, 'Could not create the therapy plan. Please try again.'));
     }
   };
 
@@ -209,7 +359,8 @@ function App() {
       await api.ipd.delete(id);
       setIpdPlans(prev => prev.filter(i => i.id !== id));
     } catch (err) {
-      alert(`Error deleting IPD plan: ${err.message}`);
+      logAppError('Failed to delete IPD plan', err);
+      alert(getUserErrorMessage(err, 'Could not delete the therapy plan. Please try again.'));
     }
   };
 
@@ -217,21 +368,33 @@ function App() {
   // CSV Export (patients only)
   // ─────────────────────────────────────────────
   const handleExportCSV = () => {
-    if (patients.length === 0) return;
-    const headers = ['id', 'name', 'phone', 'condition', 'type', 'dateAdded'];
-    const rows = patients.map(p =>
-      [p.id, `"${p.name}"`, `"${p.phone || ''}"`, `"${p.condition || ''}"`, p.type, p.dateAdded].join(',')
-    );
-    const csvContent = [headers.join(','), ...rows].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `patients_export_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    if (filteredPatients.length === 0) return;
+    try {
+      const csvContent = buildPatientCsv(filteredPatients);
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `patients_export_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      logAppError('Failed to export patients CSV', err);
+      alert(getUserErrorMessage(err, 'Could not export patient data. Please try again.'));
+    }
+  };
+
+  const handlePatientFilterChange = (field, value) => {
+    setPatientFilters((previousFilters) => ({
+      ...previousFilters,
+      [field]: value,
+    }));
+  };
+
+  const clearPatientFilters = () => {
+    setPatientFilters(DEFAULT_PATIENT_FILTERS);
   };
 
   // ─────────────────────────────────────────────
@@ -510,55 +673,93 @@ function App() {
       {/* ── PATIENTS TAB ── */}
       {activeTab === 'patients' && (
         <>
-          <section className="action-panels">
-            <div className="action-panel">
-              <h2><span className="icon">👤</span> Add New Patient</h2>
-              <form onSubmit={handleAddPatient} style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-                <div className="form-group">
-                  <label>Patient Full Name</label>
-                  <input type="text" placeholder="e.g. Rajesh Kumar" value={patientName} onChange={(e) => setPatientName(e.target.value)} required />
-                </div>
-                <div className="form-group">
-                  <label>Phone Number</label>
-                  <input type="tel" placeholder="e.g. 98765 43210" value={patientPhone} onChange={(e) => setPatientPhone(e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label>Condition / Reason for Visit</label>
-                  <input type="text" placeholder="e.g. Lower Back Pain" value={patientCondition} onChange={(e) => setPatientCondition(e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label>Patient Type</label>
-                  <select value={patientType} onChange={(e) => setPatientType(e.target.value)}>
-                    <option value="OPD">OPD — Regular Consultation</option>
-                    <option value="IPD">IPD — Therapy Plan</option>
-                  </select>
-                </div>
-                <button type="submit">Add Patient</button>
-              </form>
-            </div>
-          </section>
+          <PatientFormPanel
+            isEditMode={editingPatientId !== null}
+            name={patientName}
+            phone={patientPhone}
+            condition={patientCondition}
+            type={patientType}
+            onChangeName={setPatientName}
+            onChangePhone={setPatientPhone}
+            onChangeCondition={setPatientCondition}
+            onChangeType={setPatientType}
+            onSubmit={editingPatientId ? handleUpdatePatient : handleAddPatient}
+            onCancelEdit={handleCancelEdit}
+          />
 
           <section className="list-container">
-            <div className="list-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-              <h2>Patient Directory</h2>
-              <div className="batch-actions" style={{ display: 'flex', gap: '1rem' }}>
-                {selectedPatientIds.size > 0 && (
+            <div className="list-header patient-directory-header">
+              <div>
+                <h2>Patient Directory</h2>
+                {patients.length > 0 && (
+                  <p className="patient-directory-count">
+                    Showing {filteredPatients.length} of {patients.length} patients
+                  </p>
+                )}
+              </div>
+              <div className="batch-actions patient-directory-actions">
+                {visibleSelectedPatientCount > 0 && (
                   <button onClick={handleBulkDelete} className="btn-danger">
-                    Delete Selected ({selectedPatientIds.size})
+                    Delete Selected ({visibleSelectedPatientCount})
                   </button>
                 )}
-                <button onClick={handleExportCSV} className="btn-secondary">Export CSV</button>
+                <button
+                  onClick={handleExportCSV}
+                  className="btn-secondary"
+                  disabled={filteredPatients.length === 0}
+                >
+                  Export Visible CSV
+                </button>
               </div>
             </div>
 
-            {patients.length > 0 ? (
+            {patients.length > 0 && (
+              <>
+                <div className="patient-filter-bar">
+                  <div className="patient-filter-field patient-filter-search">
+                    <label htmlFor="patient-search">Search Patients</label>
+                    <input
+                      id="patient-search"
+                      type="search"
+                      placeholder="Search by name, phone, or condition"
+                      value={patientFilters.searchText}
+                      onChange={(e) => handlePatientFilterChange('searchText', e.target.value)}
+                    />
+                  </div>
+                  <div className="patient-filter-field patient-filter-type">
+                    <label htmlFor="patient-type-filter">Patient Type</label>
+                    <select
+                      id="patient-type-filter"
+                      value={patientFilters.patientType}
+                      onChange={(e) => handlePatientFilterChange('patientType', e.target.value)}
+                    >
+                      <option value="ALL">All</option>
+                      <option value="OPD">OPD</option>
+                      <option value="IPD">IPD</option>
+                    </select>
+                  </div>
+                  {hasActivePatientFilters && (
+                    <button type="button" onClick={clearPatientFilters} className="btn-secondary patient-filter-clear">
+                      Clear Filters
+                    </button>
+                  )}
+                </div>
+                <p className="patient-export-note">CSV export uses the currently visible patients.</p>
+              </>
+            )}
+
+            {patients.length === 0 ? (
+              <div className="empty-state">
+                No patients in the directory. Add a patient to begin.
+              </div>
+            ) : filteredPatients.length > 0 ? (
               <table className="data-table">
                 <thead>
                   <tr>
                     <th style={{ width: '40px' }}>
                       <input
                         type="checkbox"
-                        checked={selectedPatientIds.size === patients.length && patients.length > 0}
+                        checked={allVisiblePatientsSelected}
                         onChange={toggleSelectAll}
                       />
                     </th>
@@ -567,10 +768,11 @@ function App() {
                     <th>Condition</th>
                     <th>Type</th>
                     <th>Date Added</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {patients.map(p => (
+                  {filteredPatients.map(p => (
                     <tr key={p.id} className={selectedPatientIds.has(p.id) ? 'selected' : ''}>
                       <td>
                         <input type="checkbox" checked={selectedPatientIds.has(p.id)} onChange={() => toggleSelectPatient(p.id)} />
@@ -580,13 +782,27 @@ function App() {
                       <td>{p.condition || '—'}</td>
                       <td><span className={`badge badge-${p.type?.toLowerCase()}`}>{p.type}</span></td>
                       <td>{formatDate(p.dateAdded)}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn-secondary btn-sm"
+                          onClick={() => handleBeginEditPatient(p)}
+                        >
+                          Edit
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             ) : (
               <div className="empty-state">
-                No patients in the directory. Add a patient to begin.
+                <p>No patients match your filters.</p>
+                {hasActivePatientFilters && (
+                  <button type="button" onClick={clearPatientFilters} className="btn-secondary empty-state-action">
+                    Clear Filters
+                  </button>
+                )}
               </div>
             )}
           </section>
