@@ -8,16 +8,17 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  // Connection test
+  // Reserved for preload/diagnostic smoke checks.
   ping: () => ipcRenderer.invoke('ping'),
 
-  // Database health check
+  // Reserved for future diagnostics/support screens.
   healthCheck: () => ipcRenderer.invoke('db:healthCheck'),
 
   // Patients
   patients: {
     getAll:     ()          => ipcRenderer.invoke('patients:getAll'),
     add:        (patient)   => ipcRenderer.invoke('patients:add', patient),
+    update:     (patient)   => ipcRenderer.invoke('patients:update', patient),
     delete:     (id)        => ipcRenderer.invoke('patients:delete', id),
     deleteMany: (ids)       => ipcRenderer.invoke('patients:deleteMany', ids),
   },
@@ -37,7 +38,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     delete:  (id)   => ipcRenderer.invoke('ipd:delete', id),
   },
 
-  // Config / app settings
+  // Reserved for future local settings and operational flags.
   config: {
     get: (key)         => ipcRenderer.invoke('config:get', key),
     set: (key, value)  => ipcRenderer.invoke('config:set', key, value),
