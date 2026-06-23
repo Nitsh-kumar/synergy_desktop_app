@@ -10,6 +10,7 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const db = require('./database.cjs');
+const { registerPatientUpdateIpc } = require('./lib/patientUpdateIpc.cjs');
 
 let mainWindow;
 
@@ -68,10 +69,10 @@ function createWindow() {
 //  IPC Handlers
 // ─────────────────────────────────────────────
 
-// Connection test
+// Connection smoke test reserved for preload and diagnostics checks.
 ipcMain.handle('ping', () => 'pong');
 
-// Database health check
+// Reserved for future diagnostics/support screens and smoke checks.
 ipcMain.handle('db:healthCheck', () => {
   return db.healthCheck();
 });
@@ -101,6 +102,7 @@ ipcMain.handle('patients:add', (event, patient) => {
   });
 });
 
+// Retained for future row-level patient actions even though the current UI uses bulk delete.
 ipcMain.handle('patients:delete', (event, id) => {
   if (!isNonEmptyString(id)) throw new Error('Invalid patient id');
   db.deletePatient(id);
@@ -115,12 +117,15 @@ ipcMain.handle('patients:deleteMany', (event, ids) => {
   return { ok: true };
 });
 
+registerPatientUpdateIpc(ipcMain, db);
+
 // --- SESSIONS ---
 
 ipcMain.handle('sessions:getAll', () => {
   return db.getAllSessions();
 });
 
+// Retained for the planned patient profile/history flow.
 ipcMain.handle('sessions:getByPatient', (event, patientId) => {
   if (!isNonEmptyString(patientId)) throw new Error('Invalid patientId');
   return db.getSessionsByPatient(patientId);
@@ -188,6 +193,7 @@ ipcMain.handle('ipd:delete', (event, id) => {
 });
 
 // --- CONFIG ---
+// Reserved for future local settings and operational flags.
 
 ipcMain.handle('config:get', (event, key) => {
   if (!isNonEmptyString(key)) throw new Error('Invalid config key');
