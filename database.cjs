@@ -94,6 +94,8 @@ function runMigrations() {
  * @param {string} userDataPath — from app.getPath('userData')
  */
 function initDatabase(userDataPath) {
+  closeDatabase();
+
   _dbPath = path.join(userDataPath, 'synergy.db');
   db = new Database(_dbPath);
 
@@ -108,6 +110,15 @@ function initDatabase(userDataPath) {
 
   console.log('[DB] Initialized at:', _dbPath);
   return _dbPath;
+}
+
+function closeDatabase() {
+  if (!db) return false;
+
+  db.close();
+  db = undefined;
+  _dbPath = undefined;
+  return true;
 }
 
 /**
@@ -143,6 +154,21 @@ function addPatient({ id, name, phone, address, condition, type, dateAdded }) {
   `);
   stmt.run({ id, name, phone: phone || null, address: address || null, condition: condition || null, type: type || 'OPD', dateAdded });
   return { id, name, phone, address, condition, type, dateAdded };
+}
+
+function updatePatient({ id, name, phone, condition, type }) {
+  const result = db.transaction(() => {
+    const info = db.prepare(`
+      UPDATE patients
+         SET name = @name, phone = @phone, condition = @condition, type = @type
+       WHERE id = @id
+    `).run({ id, name, phone: phone ?? null, condition: condition ?? null, type });
+
+    if (info.changes === 0) return null;
+    return db.prepare('SELECT * FROM patients WHERE id = ?').get(id);
+  })();
+
+  return result;
 }
 
 function deletePatient(id) {
@@ -226,10 +252,12 @@ function setConfig(key, value) {
 
 module.exports = {
   initDatabase,
+  closeDatabase,
   healthCheck,
   // patients
   getAllPatients,
   addPatient,
+  updatePatient,
   deletePatient,
   deletePatients,
   // sessions
