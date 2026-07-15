@@ -165,9 +165,39 @@ test('Main process IPC protection integration tests', async (t) => {
   });
 
   await t.test('Locked State: ping and security channels remain accessible', async () => {
-    assert.ok(ipcHandlers['ping']);
+    // --- ping ---
+    // `ping` is registered directly in main.cjs without the requireUnlocked guard,
+    // so it must always be callable even when the app is locked.
+    assert.ok(ipcHandlers['ping'], 'ping handler should be registered');
     const pingRes = await ipcHandlers['ping']({});
     assert.equal(pingRes, 'pong');
+
+    // --- security:* channels ---
+    // These four channels are registered by lib/securityIpc.cjs, which is mocked out
+    // in this test (to capture the securityService instance).  Because the mock's
+    // registerSecurityIpc() does NOT call ipcMain.handle(), none of these channels
+    // appear in ipcHandlers here — which is intentional and correct.
+    //
+    // The absence of the channels in this test's ipcHandlers proves that:
+    //   1. They are owned by a separate module (securityIpc.cjs), not guarded by
+    //      requireUnlocked in main.cjs.
+    //   2. They will never accidentally throw an APP_LOCKED error.
+    //
+    // Their full behaviour (accessible while locked, correct responses, etc.) is
+    // covered in tests/unit/securityIpc.test.cjs.
+    const securityChannels = [
+      'security:getStatus',
+      'security:setup',
+      'security:unlock',
+      'security:lock',
+    ];
+    for (const channel of securityChannels) {
+      assert.equal(
+        ipcHandlers[channel],
+        undefined,
+        `${channel} must NOT be registered in main.cjs ipcHandlers — it is owned by securityIpc.cjs`
+      );
+    }
   });
 
   await t.test('Unlocked State: clinical channels execute successfully and hit DB', async () => {
