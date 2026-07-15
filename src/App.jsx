@@ -129,7 +129,7 @@ function App() {
         const res = await api.security.getStatus();
         if (!active) return;
         if (res.ok) {
-          setSecurityState(res.state);
+          setSecurityState(res.state || 'SECURITY_ERROR');
           if (res.state !== 'UNLOCKED') {
             setLoading(false);
           }

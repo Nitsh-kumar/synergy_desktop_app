@@ -16,6 +16,13 @@ export default function SecurityGate({ state, onUnlocked }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
+  const handlePinChange = (val, setter) => {
+    if (/^\d*$/.test(val)) {
+      setter(val);
+      if (error) setError('');
+    }
+  };
+
   if (state === 'RECOVERY_REQUIRED') {
     return (
       <div className="security-gate">
@@ -117,11 +124,12 @@ export default function SecurityGate({ state, onUnlocked }) {
                 <input
                   id="pin-input"
                   type="password"
+                  autoComplete="new-password"
                   inputMode="numeric"
                   pattern="[0-9]*"
                   maxLength={6}
                   value={pin}
-                  onChange={(e) => setPin(e.target.value)}
+                  onChange={(e) => handlePinChange(e.target.value, setPin)}
                   disabled={busy}
                   required
                 />
@@ -131,11 +139,12 @@ export default function SecurityGate({ state, onUnlocked }) {
                 <input
                   id="confirm-pin-input"
                   type="password"
+                  autoComplete="new-password"
                   inputMode="numeric"
                   pattern="[0-9]*"
                   maxLength={6}
                   value={confirmPin}
-                  onChange={(e) => setConfirmPin(e.target.value)}
+                  onChange={(e) => handlePinChange(e.target.value, setConfirmPin)}
                   disabled={busy}
                   required
                 />
@@ -155,11 +164,12 @@ export default function SecurityGate({ state, onUnlocked }) {
                 <input
                   id="unlock-pin-input"
                   type="password"
+                  autoComplete="current-password"
                   inputMode="numeric"
                   pattern="[0-9]*"
                   maxLength={6}
                   value={pin}
-                  onChange={(e) => setPin(e.target.value)}
+                  onChange={(e) => handlePinChange(e.target.value, setPin)}
                   disabled={busy}
                   required
                 />
