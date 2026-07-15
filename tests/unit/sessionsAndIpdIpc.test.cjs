@@ -85,6 +85,9 @@ function setupTestEnv() {
     setConfigValue: () => {},
     setConfigValues: () => {},
     hasClinicData: () => true,
+    healthCheck: () => {
+      return { ok: true, journalMode: 'wal' };
+    },
 
     getAllSessions: () => dbSessions,
     getSessionsByPatient: (patientId) => dbSessions.filter(s => s.patientId === patientId),
@@ -449,6 +452,23 @@ test('OPD Session and IPD Plan IPC protection and functionality', async (t) => {
       () => handlers['ipd:delete']({}, ''),
       { message: 'Invalid IPD plan id' }
     );
+  });
+
+  await t.test('db:healthCheck is protected and requires UNLOCKED state', async () => {
+    // Test while locked
+    capturedSecurityService.setState('LOCKED');
+    await assert.rejects(
+      () => handlers['db:healthCheck']({}),
+      (err) => {
+        assert.equal(err.code, 'APP_LOCKED');
+        return true;
+      }
+    );
+
+    // Test while unlocked
+    capturedSecurityService.setState('UNLOCKED');
+    const res = await handlers['db:healthCheck']({});
+    assert.deepEqual(res, { ok: true, journalMode: 'wal' });
   });
 
   cleanup();

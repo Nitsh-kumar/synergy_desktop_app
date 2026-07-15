@@ -75,10 +75,7 @@ function createWindow() {
 // Connection smoke test reserved for preload and diagnostics checks.
 ipcMain.handle('ping', () => 'pong');
 
-// Reserved for future diagnostics/support screens and smoke checks.
-ipcMain.handle('db:healthCheck', () => {
-  return db.healthCheck();
-});
+
 
 
 
@@ -143,6 +140,11 @@ app.whenReady().then(async () => {
 
   // Register security IPC handlers
   registerSecurityIpc({ ipcMain, securityService });
+
+  // Reserved for future diagnostics/support screens and smoke checks.
+  ipcMain.handle('db:healthCheck', requireUnlocked(securityService, () => {
+    return db.healthCheck();
+  }));
 
   // --- PATIENTS ---
 
