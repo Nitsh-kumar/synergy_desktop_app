@@ -1,0 +1,82 @@
+.security-gate {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background-color: var(--bg-main, #121214);
+  color: var(--text-main, #e1e1e6);
+  padding: 20px;
+}
+.security-card {
+  background-color: var(--bg-card, #202024);
+  border: 1px solid var(--border, #323238);
+  border-radius: 8px;
+  padding: 30px;
+  width: 100%;
+  max-width: 400px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+.security-card.warning {
+  border-color: #f75a68;
+  text-align: center;
+}
+.security-card.warning h2 {
+  color: #f75a68;
+  margin-bottom: 20px;
+}
+.security-card h2 {
+  margin-top: 0;
+  margin-bottom: 24px;
+  font-size: 1.5rem;
+  color: #ffffff;
+}
+.security-card .form-group {
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+}
+.security-card label {
+  margin-bottom: 8px;
+  font-size: 0.9rem;
+  color: var(--text-secondary, #a8a8b3);
+}
+.security-card input {
+  background-color: var(--bg-input, #121214);
+  border: 1px solid var(--border, #323238);
+  border-radius: 4px;
+  color: #ffffff;
+  padding: 10px 12px;
+  padding-left: 0.5em;
+  font-size: 1.1rem;
+  text-align: center;
+  letter-spacing: 0.5em;
+}
+.security-card input:focus {
+  outline: none;
+  border-color: var(--primary, #00875f);
+}
+.security-card button {
+  width: 100%;
+  background-color: var(--primary, #00875f);
+  color: #ffffff;
+  border: none;
+  border-radius: 4px;
+  padding: 12px;
+  font-size: 1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+.security-card button:hover:not(:disabled) {
+  background-color: var(--primary-hover, #00b37e);
+}
+.security-card button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.security-card .error-text {
+  color: #f75a68;
+  font-size: 0.9rem;
+  margin-top: -10px;
+  margin-bottom: 15px;
+}

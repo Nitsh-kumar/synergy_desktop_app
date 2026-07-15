@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import './App.css';
+import SecurityGate from './components/SecurityGate.jsx';
 import { buildPatientCsv } from './lib/patientCsv.js';
 import {
   DEFAULT_PATIENT_FILTERS,
@@ -17,6 +18,7 @@ import {
   applyPatientEditResult,
 } from './lib/patientEditing.js';
 import PatientFormPanel from './components/PatientFormPanel.jsx';
+import { canLoadData } from './lib/securityHelpers.js';
 
 // ─────────────────────────────────────────────
 // Helper: use Electron IPC if available, otherwise warn
@@ -51,6 +53,7 @@ function App() {
   const [activeTab, setActiveTab]     = useState('dashboard'); // dashboard | opd | ipd
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState(null);
+  const [securityState, setSecurityState] = useState('CHECKING');
 
   // Patient form state
   const [patientName, setPatientName]           = useState('');
@@ -88,6 +91,10 @@ function App() {
       setLoading(false);
       return;
     }
+    // Strict gate checking
+    if (!canLoadData(securityState)) {
+      return;
+    }
     try {
       setLoading(true);
       const [p, s, i] = await Promise.all([
@@ -104,11 +111,49 @@ function App() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [securityState]);
 
+  // Security status check effect: only triggers when securityState === 'CHECKING'
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    if (securityState !== 'CHECKING') return;
+
+    let active = true;
+    const initSecurity = async () => {
+      if (!api) {
+        setSecurityState('SECURITY_ERROR');
+        setError('Electron API not found. Please run the app via Electron.');
+        setLoading(false);
+        return;
+      }
+      try {
+        const res = await api.security.getStatus();
+        if (!active) return;
+        if (res.ok) {
+          setSecurityState(res.state);
+          if (res.state !== 'UNLOCKED') {
+            setLoading(false);
+          }
+        } else {
+          setSecurityState('SECURITY_ERROR');
+          setLoading(false);
+        }
+      } catch (err) {
+        if (!active) return;
+        logAppError('Security status check failed', err);
+        setSecurityState('SECURITY_ERROR');
+        setLoading(false);
+      }
+    };
+    initSecurity();
+    return () => { active = false; };
+  }, [securityState]);
+
+  // Data loading effect: runs only when securityState === 'UNLOCKED'
+  useEffect(() => {
+    if (securityState === 'UNLOCKED') {
+      loadData();
+    }
+  }, [securityState, loadData]);
 
   // ─────────────────────────────────────────────
   // Derived KPIs
@@ -400,6 +445,50 @@ function App() {
   // ─────────────────────────────────────────────
   // Render helpers
   // ─────────────────────────────────────────────
+  if (securityState === 'CHECKING') {
+    return (
+      <div className="splash">
+        <div className="splash-inner">
+          <div className="spinner" />
+          <p>Checking application security...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (securityState === 'SECURITY_ERROR') {
+    return (
+      <div className="splash">
+        <div className="splash-inner error">
+          <span className="error-icon">⚠️</span>
+          <p>Synergy could not verify the application security state.</p>
+          <p>Close and reopen the application. If the problem continues, use the controlled support procedure.</p>
+          <button
+            onClick={() => {
+              setSecurityState('CHECKING');
+              setError(null);
+            }}
+            className="btn-secondary"
+            style={{ marginTop: '15px' }}
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (securityState !== 'UNLOCKED') {
+    return (
+      <SecurityGate
+        state={securityState}
+        onUnlocked={() => {
+          setSecurityState('UNLOCKED');
+        }}
+      />
+    );
+  }
+
   if (loading) {
     return (
       <div className="splash">
