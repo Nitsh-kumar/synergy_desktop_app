@@ -82,78 +82,7 @@ ipcMain.handle('db:healthCheck', () => {
 
 
 
-// --- SESSIONS ---
 
-ipcMain.handle('sessions:getAll', () => {
-  return db.getAllSessions();
-});
-
-// Retained for the planned patient profile/history flow.
-ipcMain.handle('sessions:getByPatient', (event, patientId) => {
-  if (!isNonEmptyString(patientId)) throw new Error('Invalid patientId');
-  return db.getSessionsByPatient(patientId);
-});
-
-ipcMain.handle('sessions:add', (event, session) => {
-  if (!session || !isNonEmptyString(session.patientId)) {
-    throw new Error('Invalid session: patientId is required');
-  }
-  if (!isNonEmptyString(session.type)) {
-    throw new Error('Invalid session: type is required');
-  }
-  const cost = parseFloat(session.cost);
-  if (!isFiniteNumber(cost) || cost < 0) {
-    throw new Error('Invalid session cost');
-  }
-  const now = new Date().toISOString();
-  return db.addSession({
-    id: generateId(),
-    patientId: session.patientId,
-    type: session.type.trim(),
-    notes: isNonEmptyString(session.notes) ? session.notes.trim() : null,
-    cost,
-    date: now,
-  });
-});
-
-ipcMain.handle('sessions:delete', (event, id) => {
-  if (!isNonEmptyString(id)) throw new Error('Invalid session id');
-  db.deleteSession(id);
-  return { ok: true };
-});
-
-// --- IPD PLANS ---
-
-ipcMain.handle('ipd:getAll', () => {
-  return db.getAllIpdPlans();
-});
-
-ipcMain.handle('ipd:add', (event, plan) => {
-  if (!plan || !isNonEmptyString(plan.patientId)) {
-    throw new Error('Invalid IPD plan: patientId is required');
-  }
-  if (!isNonEmptyString(plan.title)) {
-    throw new Error('Invalid IPD plan: title is required');
-  }
-  const totalSessions = parseInt(plan.totalSessions, 10);
-  if (!Number.isInteger(totalSessions) || totalSessions < 1) {
-    throw new Error('Invalid totalSessions: must be a positive integer');
-  }
-  return db.addIpdPlan({
-    id: generateId(),
-    patientId: plan.patientId,
-    title: plan.title.trim(),
-    totalSessions,
-    startDate: isNonEmptyString(plan.startDate) ? plan.startDate.trim() : null,
-    notes: isNonEmptyString(plan.notes) ? plan.notes.trim() : null,
-  });
-});
-
-ipcMain.handle('ipd:delete', (event, id) => {
-  if (!isNonEmptyString(id)) throw new Error('Invalid IPD plan id');
-  db.deleteIpdPlan(id);
-  return { ok: true };
-});
 
 // --- CONFIG ---
 // Reserved for future local settings and operational flags.
@@ -256,6 +185,78 @@ app.whenReady().then(async () => {
   }));
 
   registerPatientUpdateIpc(ipcMain, db, securityService);
+
+  // --- SESSIONS ---
+
+  ipcMain.handle('sessions:getAll', requireUnlocked(securityService, () => {
+    return db.getAllSessions();
+  }));
+
+  ipcMain.handle('sessions:getByPatient', requireUnlocked(securityService, (event, patientId) => {
+    if (!isNonEmptyString(patientId)) throw new Error('Invalid patientId');
+    return db.getSessionsByPatient(patientId);
+  }));
+
+  ipcMain.handle('sessions:add', requireUnlocked(securityService, (event, session) => {
+    if (!session || !isNonEmptyString(session.patientId)) {
+      throw new Error('Invalid session: patientId is required');
+    }
+    if (!isNonEmptyString(session.type)) {
+      throw new Error('Invalid session: type is required');
+    }
+    const cost = parseFloat(session.cost);
+    if (!isFiniteNumber(cost) || cost < 0) {
+      throw new Error('Invalid session cost');
+    }
+    const now = new Date().toISOString();
+    return db.addSession({
+      id: generateId(),
+      patientId: session.patientId,
+      type: session.type.trim(),
+      notes: isNonEmptyString(session.notes) ? session.notes.trim() : null,
+      cost,
+      date: now,
+    });
+  }));
+
+  ipcMain.handle('sessions:delete', requireUnlocked(securityService, (event, id) => {
+    if (!isNonEmptyString(id)) throw new Error('Invalid session id');
+    db.deleteSession(id);
+    return { ok: true };
+  }));
+
+  // --- IPD PLANS ---
+
+  ipcMain.handle('ipd:getAll', requireUnlocked(securityService, () => {
+    return db.getAllIpdPlans();
+  }));
+
+  ipcMain.handle('ipd:add', requireUnlocked(securityService, (event, plan) => {
+    if (!plan || !isNonEmptyString(plan.patientId)) {
+      throw new Error('Invalid IPD plan: patientId is required');
+    }
+    if (!isNonEmptyString(plan.title)) {
+      throw new Error('Invalid IPD plan: title is required');
+    }
+    const totalSessions = parseInt(plan.totalSessions, 10);
+    if (!Number.isInteger(totalSessions) || totalSessions < 1) {
+      throw new Error('Invalid totalSessions: must be a positive integer');
+    }
+    return db.addIpdPlan({
+      id: generateId(),
+      patientId: plan.patientId,
+      title: plan.title.trim(),
+      totalSessions,
+      startDate: isNonEmptyString(plan.startDate) ? plan.startDate.trim() : null,
+      notes: isNonEmptyString(plan.notes) ? plan.notes.trim() : null,
+    });
+  }));
+
+  ipcMain.handle('ipd:delete', requireUnlocked(securityService, (event, id) => {
+    if (!isNonEmptyString(id)) throw new Error('Invalid IPD plan id');
+    db.deleteIpdPlan(id);
+    return { ok: true };
+  }));
 
   createWindow();
 
