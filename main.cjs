@@ -11,6 +11,9 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const db = require('./database.cjs');
 const { registerPatientUpdateIpc } = require('./lib/patientUpdateIpc.cjs');
+const { createSecurityService } = require('./lib/securityService.cjs');
+const { registerSecurityIpc } = require('./lib/securityIpc.cjs');
+const { requireUnlocked } = require('./lib/ipcSecurityGuard.cjs');
 
 let mainWindow;
 
@@ -77,47 +80,7 @@ ipcMain.handle('db:healthCheck', () => {
   return db.healthCheck();
 });
 
-// --- PATIENTS ---
 
-ipcMain.handle('patients:getAll', () => {
-  return db.getAllPatients();
-});
-
-ipcMain.handle('patients:add', (event, patient) => {
-  if (!patient || !isNonEmptyString(patient.name)) {
-    throw new Error('Invalid patient: name is required');
-  }
-  if (patient.type && !['OPD', 'IPD'].includes(patient.type)) {
-    throw new Error('Invalid patient type: must be OPD or IPD');
-  }
-  const now = new Date().toISOString();
-  return db.addPatient({
-    id: generateId(),
-    name: patient.name.trim(),
-    phone: isNonEmptyString(patient.phone) ? patient.phone.trim() : null,
-    address: isNonEmptyString(patient.address) ? patient.address.trim() : null,
-    condition: isNonEmptyString(patient.condition) ? patient.condition.trim() : null,
-    type: patient.type || 'OPD',
-    dateAdded: now,
-  });
-});
-
-// Retained for future row-level patient actions even though the current UI uses bulk delete.
-ipcMain.handle('patients:delete', (event, id) => {
-  if (!isNonEmptyString(id)) throw new Error('Invalid patient id');
-  db.deletePatient(id);
-  return { ok: true };
-});
-
-ipcMain.handle('patients:deleteMany', (event, ids) => {
-  if (!Array.isArray(ids) || ids.some(id => !isNonEmptyString(id))) {
-    throw new Error('Invalid ids array');
-  }
-  db.deletePatients(ids);
-  return { ok: true };
-});
-
-registerPatientUpdateIpc(ipcMain, db);
 
 // --- SESSIONS ---
 
@@ -226,6 +189,73 @@ app.whenReady().then(async () => {
     app.quit();
     return;
   }
+
+  // Construct and initialize security service
+  let securityService;
+  try {
+    securityService = createSecurityService({
+      getConfig: db.getConfig,
+      setConfig: db.setConfig,
+      deleteConfig: db.deleteConfig,
+      getConfigValue: db.getConfigValue,
+      setConfigValue: db.setConfigValue,
+      setConfigValues: db.setConfigValues,
+      hasClinicData: db.hasClinicData,
+    });
+    securityService.determineInitialState();
+  } catch {
+    await dialog.showErrorBox(
+      'Security Initialization Error',
+      'Synergy could not initialize security services. The app will now close.'
+    );
+    app.quit();
+    return;
+  }
+
+  // Register security IPC handlers
+  registerSecurityIpc({ ipcMain, securityService });
+
+  // --- PATIENTS ---
+
+  ipcMain.handle('patients:getAll', requireUnlocked(securityService, () => {
+    return db.getAllPatients();
+  }));
+
+  ipcMain.handle('patients:add', requireUnlocked(securityService, (event, patient) => {
+    if (!patient || !isNonEmptyString(patient.name)) {
+      throw new Error('Invalid patient: name is required');
+    }
+    if (patient.type && !['OPD', 'IPD'].includes(patient.type)) {
+      throw new Error('Invalid patient type: must be OPD or IPD');
+    }
+    const now = new Date().toISOString();
+    return db.addPatient({
+      id: generateId(),
+      name: patient.name.trim(),
+      phone: isNonEmptyString(patient.phone) ? patient.phone.trim() : null,
+      address: isNonEmptyString(patient.address) ? patient.address.trim() : null,
+      condition: isNonEmptyString(patient.condition) ? patient.condition.trim() : null,
+      type: patient.type || 'OPD',
+      dateAdded: now,
+    });
+  }));
+
+  // Retained for future row-level patient actions even though the current UI uses bulk delete.
+  ipcMain.handle('patients:delete', requireUnlocked(securityService, (event, id) => {
+    if (!isNonEmptyString(id)) throw new Error('Invalid patient id');
+    db.deletePatient(id);
+    return { ok: true };
+  }));
+
+  ipcMain.handle('patients:deleteMany', requireUnlocked(securityService, (event, ids) => {
+    if (!Array.isArray(ids) || ids.some(id => !isNonEmptyString(id))) {
+      throw new Error('Invalid ids array');
+    }
+    db.deletePatients(ids);
+    return { ok: true };
+  }));
+
+  registerPatientUpdateIpc(ipcMain, db, securityService);
 
   createWindow();
 
